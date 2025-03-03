@@ -1,16 +1,35 @@
 import streamlit as st
 import speech_recognition as sr
-from pydub import AudioSegment
+from pydub import AudioSegment, silence
 import tempfile
 import os
+import textwrap
+
+# Ensure ffmpeg is installed (Streamlit Cloud needs this)
+AudioSegment.converter = "/usr/bin/ffmpeg"
+
+# Function to split text into 3-4 word chunks
+def split_text(text, words_per_line=3):
+    words = text.split()
+    return textwrap.wrap(" ".join(words), width=words_per_line * 5)  # Approximate width
 
 # Function to format text into SRT format
 def generate_srt(transcriptions):
     srt_content = ""
-    for i, (start_time, end_time, text) in enumerate(transcriptions, 1):
-        start_srt = f"{int(start_time // 3600):02}:{int((start_time % 3600) // 60):02}:{int(start_time % 60):02},000"
-        end_srt = f"{int(end_time // 3600):02}:{int((end_time % 3600) // 60):02}:{int(end_time % 60):02},000"
-        srt_content += f"{i}\n{start_srt} --> {end_srt}\n{text}\n\n"
+    index = 1
+
+    for start_time, end_time, text in transcriptions:
+        chunks = split_text(text, words_per_line=3)  # Split into 3-word lines
+        chunk_duration = (end_time - start_time) / max(1, len(chunks))  # Distribute duration
+
+        for chunk in chunks:
+            start_srt = f"{int(start_time // 3600):02}:{int((start_time % 3600) // 60):02}:{int(start_time % 60):02},000"
+            end_srt = f"{int(end_time // 3600):02}:{int((end_time % 3600) // 60):02}:{int(end_time % 60):02},000"
+
+            srt_content += f"{index}\n{start_srt} --> {end_srt}\n{chunk}\n\n"
+            index += 1
+            start_time += chunk_duration  # Shift start time for next chunk
+
     return srt_content
 
 st.title("🎙️ Audio to Text Transcription App (Google)")
@@ -31,24 +50,45 @@ if uploaded_file is not None:
 
     recognizer = sr.Recognizer()
     transcriptions = []
-    step = 5
+
     with sr.AudioFile(file_path) as source:
-        duration = int(source.DURATION)  # Get total duration in seconds
-        
-        # Process in 5-second chunks
-        for i in range(0, duration, step):
-            source = sr.AudioFile(file_path)  # Reopen file for each iteration
-            with source as audio_source:
+        # Split audio on silence with better thresholds
+        audio_chunks = silence.split_on_silence(
+            audio,
+            min_silence_len=700,  # Increase to 700ms to ensure proper chunks
+            silence_thresh=-35,  # Lower threshold for catching speech parts
+            keep_silence=400  # Keep some silence to maintain context
+        )
+
+        if not audio_chunks:
+            st.error("⚠️ No speech detected in audio file!")
+        else:
+            st.write(f"🔄 Processing {len(audio_chunks)} audio chunks...")
+
+        for i, chunk in enumerate(audio_chunks):
+            chunk_path = f"{file_path}_{i}.wav"
+            chunk.export(chunk_path, format="wav")
+
+            # Skip chunks that are too short (<1 sec)
+            if len(chunk) < 1000:
+                os.remove(chunk_path)
+                continue
+
+            with sr.AudioFile(chunk_path) as audio_source:
                 recognizer.adjust_for_ambient_noise(audio_source, duration=0.5)
-                audio_data = recognizer.record(audio_source, offset=i, duration=step)  # Use offset correctly
+                audio_data = recognizer.record(audio_source)
+
             try:
                 text = recognizer.recognize_google(audio_data)
-                transcriptions.append((i, min(i + step, duration), text))  # Store chunk timestamps
+                st.write(f"✅ Chunk {i+1}: {text}")  # Debug output
+                transcriptions.append((i * 3, (i + 1) * 3, text))
             except sr.UnknownValueError:
-                continue  # Skip if the chunk is not recognized
+                st.write(f"❌ Chunk {i+1}: Could not recognize speech")
             except sr.RequestError:
                 st.error("❌ Google API error. Check internet connection.")
                 break
+            finally:
+                os.remove(chunk_path)  # Remove temp files
 
     # Generate SRT content
     srt_text = generate_srt(transcriptions)
