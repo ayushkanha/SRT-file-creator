@@ -1,0 +1,4 @@
+matplotlib>=3.7.1
+urlextract>=1.5.0
+emoji>=2.8.0
+pandas>=2.0.3
