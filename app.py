@@ -31,7 +31,7 @@ if uploaded_file is not None:
 
     recognizer = sr.Recognizer()
     transcriptions = []
-    step = 2
+    step = 5
     with sr.AudioFile(file_path) as source:
         duration = int(source.DURATION)  # Get total duration in seconds
         
