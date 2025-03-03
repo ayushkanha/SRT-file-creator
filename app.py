@@ -31,7 +31,7 @@ if uploaded_file is not None:
 
     recognizer = sr.Recognizer()
     transcriptions = []
-    step = st.number_input("Insert a Text size in seconds ")
+    step = 2
     with sr.AudioFile(file_path) as source:
         duration = int(source.DURATION)  # Get total duration in seconds
         
