@@ -2,4 +2,4 @@ streamlit
 speechrecognition
 pydub
 whisper
-
+openai-whisper
