@@ -1,4 +1,5 @@
 streamlit
 speechrecognition
 pydub
+whisper
 
